@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daymakers — Inspection Review Portal</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f4f8; min-height: 100vh; padding: 20px 16px 40px; }
+  .btn { cursor: pointer; border: none; font-weight: 600; font-size: 14px; border-radius: 8px; padding: 10px 0; transition: opacity 0.15s, transform 0.1s; width: 100%; }
+  .btn:hover { opacity: 0.9; }
+  .btn:active { transform: scale(0.98); }
+  .tab-btn { background: transparent; border: none; cursor: pointer; transition: all 0.15s; }
+  .tab-btn:hover { background: #f0f0f0; }
+  .pdf-toggle { background: transparent; border: 1px solid #5BB8E8; color: #5BB8E8; border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; }
+  .motive-link { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; background: #1a1a2e; color: #E7C72F; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; letter-spacing: 0.3px; }
+  .motive-link:hover { opacity: 0.9; }
+  .decided-badge { text-align: center; padding: 10px; border-radius: 8px; font-weight: 700; font-size: 14px; }
+  @keyframes fadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-8px); } }
+  .fading { animation: fadeOut 0.35s ease forwards; }
+  @keyframes confettiPop { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  .complete-screen { animation: confettiPop 0.4s ease forwards; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const GET_URL = "https://daymakersmoving.app.n8n.cloud/webhook/pending-reviews";
+const POST_URL = "https://daymakersmoving.app.n8n.cloud/webhook/submit-decision";
+
+const NAVY = "#1a1a2e";
+const GOLD = "#E7C72F";
+const SKY = "#5BB8E8";
+const GREEN = "#27ae60";
+const RED = "#e74c3c";
+
+function TypeBadge({ type }) {
+  const styles = {
+    "Pre-Trip":  { bg: "#e3f2fd", color: "#1565c0" },
+    "Post-Trip": { bg: "#e8f5e9", color: "#2e7d32" },
+    "ELD":       { bg: "#fff3e0", color: "#e65100" },
+  };
+  const s = styles[type] || styles["ELD"];
+  return (
+    <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.2, background: s.bg, color: s.color, padding: "3px 9px", borderRadius: 4 }}>
+      {type?.toUpperCase()}
+    </span>
+  );
+}
+
+function CardHeader({ item }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <TypeBadge type={item["Data Type"]} />
+        <div style={{ fontSize: 16, fontWeight: 700, color: NAVY }}>{item["Driver Name"]}</div>
+        <div style={{ fontSize: 12, color: "#888" }}>Foreman: {item["Foreman Name"]}</div>
+      </div>
+      <div style={{ textAlign: "right", fontSize: 12, color: "#888", lineHeight: 1.6 }}>
+        <div style={{ fontWeight: 600, color: NAVY }}>Truck {item["Vehicle Number"]}</div>
+        <div>Job {item["Job Number"]}</div>
+        <div>{item["Date"]}</div>
+      </div>
+    </div>
+  );
+}
+
+function DecisionButtons({ onPass, onFail }) {
+  return (
+    <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+      <button className="btn" onClick={onPass} style={{ background: GREEN, color: "#fff" }}>✓ Pass</button>
+      <button className="btn" onClick={onFail} style={{ background: RED, color: "#fff" }}>✗ Confirmed Fail</button>
+    </div>
+  );
+}
+
+function DecidedBadge({ decision }) {
+  const isPass = decision === "Pass";
+  return (
+    <div className="decided-badge" style={{ background: isPass ? "#e8f5e9" : "#ffebee", color: isPass ? GREEN : RED, marginTop: 12 }}>
+      {isPass ? "✓ Marked as Pass" : "✗ Confirmed Fail"}
+    </div>
+  );
+}
+
+function InspectionCard({ item, onDecide, decision, fading }) {
+  const [showPdf, setShowPdf] = useState(false);
+  const pdfUrl = item["PDF URL"];
+  const viewerUrl = pdfUrl ? `https://docs.google.com/viewer?url=${encodeURIComponent(pdfUrl)}&embedded=true` : null;
+
+  return (
+    <div className={fading ? "fading" : ""} style={{
+      background: "#fff", border: "1px solid #e0e0e0",
+      borderLeft: `4px solid ${SKY}`, borderRadius: 12, padding: 20, marginBottom: 14
+    }}>
+      <CardHeader item={item} />
+
+      {item["Failed Item"] && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#aaa", letterSpacing: 1.2, marginBottom: 3 }}>FAILED ITEM</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: NAVY }}>{item["Failed Item"]}</div>
+        </div>
+      )}
+
+      {item["Summary"] && (
+        <div style={{ background: "#fffbea", border: "1px solid #ffe082", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#f57c00", letterSpacing: 1.2, marginBottom: 4 }}>AI REASON</div>
+          <p style={{ fontSize: 13, color: "#444", lineHeight: 1.6 }}>{item["Summary"]}</p>
+        </div>
+      )}
+
+      {viewerUrl && (
+        <div style={{ marginBottom: 12 }}>
+          <button className="pdf-toggle" onClick={() => setShowPdf(!showPdf)}>
+            {showPdf ? "Hide PDF" : "View Inspection PDF ↓"}
+          </button>
+          {showPdf && (
+            <iframe src={viewerUrl} style={{ width: "100%", height: 520, border: "1px solid #ddd", borderRadius: 8, marginTop: 8 }} title="Inspection PDF" />
+          )}
+        </div>
+      )}
+
+      {decision ? <DecidedBadge decision={decision} /> : <DecisionButtons onPass={() => onDecide(item, "Pass")} onFail={() => onDecide(item, "Confirmed Fail")} />}
+    </div>
+  );
+}
+
+function ELDCard({ item, onDecide, decision, fading }) {
+  const motiveUrl = item["PDF URL"] || "https://app.gomotive.com/en-US/#/safety";
+
+  return (
+    <div className={fading ? "fading" : ""} style={{
+      background: "#fff", border: "1px solid #e0e0e0",
+      borderLeft: `4px solid ${GOLD}`, borderRadius: 12, padding: 20, marginBottom: 14
+    }}>
+      <CardHeader item={item} />
+
+      {item["Failed Item"] && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#aaa", letterSpacing: 1.2, marginBottom: 3 }}>VIOLATION TYPE</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: NAVY }}>{item["Failed Item"]}</div>
+        </div>
+      )}
+
+      {item["Summary"] && (
+        <div style={{ background: "#fff3e0", border: "1px solid #ffe0b2", borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#e65100", letterSpacing: 1.2, marginBottom: 4 }}>DETAILS</div>
+          <p style={{ fontSize: 13, color: "#444", lineHeight: 1.6 }}>{item["Summary"]}</p>
+        </div>
+      )}
+
+      <div style={{ marginBottom: 14 }}>
+        <a href={motiveUrl} target="_blank" rel="noreferrer" className="motive-link">
+          View Safety Event in Motive ↗
+        </a>
+      </div>
+
+      {decision ? <DecidedBadge decision={decision} /> : <DecisionButtons onPass={() => onDecide(item, "Pass")} onFail={() => onDecide(item, "Confirmed Fail")} />}
+    </div>
+  );
+}
+
+function App() {
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [filter, setFilter] = useState("All");
+  const [decisions, setDecisions] = useState({});
+  const [fading, setFading] = useState({});
+  const [allDone, setAllDone] = useState(false);
+
+  useEffect(() => { loadReviews(); }, []);
+
+  const loadReviews = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch(GET_URL);
+      const data = await res.json();
+      setReviews(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setError("Could not connect to review system. Please check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDecide = async (item, decision) => {
+    const rowNumber = item.row_number;
+    try {
+      await fetch(POST_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rowNumber: rowNumber,
+          decision: decision,
+          dataType: item["Data Type"],
+          inspectionId: item["Inspection ID"],
+          motiveEventId: item["Motive Event ID"],
+          driverName: item["Driver Name"],
+          date: item["Date"],
+          summary: item["Summary"]
+        })
+      });
+      setFading(prev => ({ ...prev, [rowNumber]: true }));
+      setTimeout(() => {
+        const newDecisions = { ...decisions, [rowNumber]: decision };
+        setDecisions(newDecisions);
+        setFading(prev => { const n = { ...prev }; delete n[rowNumber]; return n; });
+        const remaining = reviews.filter(r => !newDecisions[r.row_number]);
+        if (remaining.length === 0) {
+          setAllDone(true);
+          fireConfetti();
+        }
+      }, 350);
+    } catch (e) {
+      console.error("Submit failed:", e);
+    }
+  };
+
+  const fireConfetti = () => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js';
+    s.onload = () => {
+      const end = Date.now() + 3500;
+      const colors = [GOLD, SKY, '#ffffff', NAVY];
+      (function frame() {
+        window.confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors });
+        window.confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors });
+        if (Date.now() < end) requestAnimationFrame(frame);
+      })();
+      try { new Audio('https://www.soundjay.com/human/sounds/applause-01.mp3').play(); } catch(e) {}
+    };
+    document.head.appendChild(s);
+  };
+
+  const pending = reviews.filter(r => !decisions[r.row_number]);
+  const counts = {
+    "All": pending.length,
+    "Pre-Trip": pending.filter(r => r["Data Type"] === "Pre-Trip").length,
+    "Post-Trip": pending.filter(r => r["Data Type"] === "Post-Trip").length,
+    "ELD": pending.filter(r => r["Data Type"] === "ELD").length,
+  };
+  const visible = pending.filter(r => filter === "All" || r["Data Type"] === filter);
+
+  return (
+    <div style={{ maxWidth: 700, margin: "0 auto" }}>
+      <div style={{ background: NAVY, padding: "20px 24px", borderRadius: "12px 12px 0 0" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ color: GOLD, fontWeight: 800, fontSize: 17, letterSpacing: 1.5 }}>DAYMAKERS MOVING & STORAGE</div>
+            <div style={{ color: "#a0a0b0", fontSize: 11, marginTop: 3, letterSpacing: 0.8 }}>INSPECTION REVIEW PORTAL</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ color: GOLD, fontSize: 32, fontWeight: 800, lineHeight: 1 }}>{pending.length}</div>
+            <div style={{ color: "#a0a0b0", fontSize: 10, letterSpacing: 1 }}>PENDING</div>
+          </div>
+        </div>
+      </div>
+
+      {!loading && !error && reviews.length > 0 && (
+        <div style={{ background: "#f3f3f3", borderLeft: "1px solid #e0e0e0", borderRight: "1px solid #e0e0e0", padding: "8px 24px", display: "flex", gap: 20, fontSize: 12, color: "#666", flexWrap: "wrap" }}>
+          <span>Pre-Trip: <strong style={{ color: "#1565c0" }}>{counts["Pre-Trip"]}</strong></span>
+          <span>Post-Trip: <strong style={{ color: "#2e7d32" }}>{counts["Post-Trip"]}</strong></span>
+          <span>ELD: <strong style={{ color: "#e65100" }}>{counts["ELD"]}</strong></span>
+          <span style={{ marginLeft: "auto" }}>{Object.keys(decisions).length} of {reviews.length} reviewed</span>
+        </div>
+      )}
+
+      {!loading && !error && !allDone && reviews.length > 0 && (
+        <div style={{ display: "flex", background: "#fff", borderLeft: "1px solid #e0e0e0", borderRight: "1px solid #e0e0e0", borderBottom: "1px solid #e0e0e0" }}>
+          {["All", "Pre-Trip", "Post-Trip", "ELD"].map(tab => (
+            <button key={tab} className="tab-btn" onClick={() => setFilter(tab)} style={{
+              flex: 1, padding: "11px 8px",
+              borderBottom: filter === tab ? `3px solid ${GOLD}` : "3px solid transparent",
+              fontWeight: filter === tab ? 700 : 400, fontSize: 13,
+              color: filter === tab ? NAVY : "#888"
+            }}>
+              {tab}
+              {counts[tab] > 0 && (
+                <span style={{
+                  marginLeft: 6,
+                  background: filter === tab ? GOLD : "#eee",
+                  color: filter === tab ? NAVY : "#888",
+                  borderRadius: 10, padding: "1px 7px", fontSize: 11, fontWeight: 700
+                }}>{counts[tab]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{
+        border: "1px solid #e0e0e0", borderTop: "none",
+        borderRadius: "0 0 12px 12px", padding: 20,
+        background: "#fafafa", minHeight: 200
+      }}>
+        {loading && (
+          <div style={{ textAlign: "center", padding: 60, color: "#aaa" }}>
+            <div style={{ fontSize: 14 }}>Loading reviews...</div>
+          </div>
+        )}
+
+        {error && (
+          <div style={{ textAlign: "center", padding: 40 }}>
+            <div style={{ color: RED, fontSize: 14, marginBottom: 12 }}>{error}</div>
+            <button className="btn" onClick={loadReviews} style={{ background: NAVY, color: GOLD, padding: "10px 24px", width: "auto" }}>Retry</button>
+          </div>
+        )}
+
+        {!loading && !error && allDone && (
+          <div className="complete-screen" style={{ textAlign: "center", padding: 60 }}>
+            <div style={{ fontSize: 48, marginBottom: 14 }}>✅</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: NAVY, marginBottom: 8 }}>All Inspections Reviewed</div>
+            <div style={{ color: "#888", fontSize: 14 }}>All pending inspections have been decided. Results will be updated automatically.</div>
+          </div>
+        )}
+
+        {!loading && !error && !allDone && reviews.length === 0 && (
+          <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 14 }}>
+            No pending reviews at this time.
+          </div>
+        )}
+
+        {!loading && !error && !allDone && visible.length === 0 && reviews.length > 0 && (
+          <div style={{ textAlign: "center", padding: 40, color: "#aaa", fontSize: 14 }}>
+            No pending reviews in this category.
+          </div>
+        )}
+
+        {!loading && !error && !allDone && visible.map(item =>
+          item["Data Type"] === "ELD" ? (
+            <ELDCard key={item.row_number} item={item} onDecide={handleDecide} decision={decisions[item.row_number]} fading={!!fading[item.row_number]} />
+          ) : (
+            <InspectionCard key={item.row_number} item={item} onDecide={handleDecide} decision={decisions[item.row_number]} fading={!!fading[item.row_number]} />
+          )
+        )}
+      </div>
+
+      <div style={{ textAlign: "center", padding: "14px 0 0", color: "#bbb", fontSize: 11 }}>
+        Daymakers Automated Inspection Review System
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
